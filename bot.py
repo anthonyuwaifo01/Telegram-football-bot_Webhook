@@ -3,11 +3,9 @@ import random
 from fastapi import FastAPI, Request
 from telegram import Update, Bot
 from telegram.ext import (
-    ApplicationBuilder,
+    Application,
     CommandHandler,
     ContextTypes,
-    MessageHandler,
-    filters
 )
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -17,7 +15,7 @@ bot = Bot(token=TOKEN)
 app = FastAPI()
 
 # --- State ---
-admins = set()
+admins = {1081255171}
 members = {}
 selection_active = False
 teams = []
@@ -110,10 +108,10 @@ async def make_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: /makeadmin <user_id>")
 
 # --- Build Application ---
-app_bot = ApplicationBuilder().token(TOKEN).build()
-app_bot.add_handler(CommandHandler("begin", begin))   # greeting/admin check
-app_bot.add_handler(CommandHandler("start", start))   # start selection
-app_bot.add_handler(CommandHandler("end", end))       # end selection
+app_bot = Application.builder().token(TOKEN).build()
+app_bot.add_handler(CommandHandler("begin", begin))
+app_bot.add_handler(CommandHandler("start", start))
+app_bot.add_handler(CommandHandler("end", end))
 app_bot.add_handler(CommandHandler("in", in_command))
 app_bot.add_handler(CommandHandler("out", out_command))
 app_bot.add_handler(CommandHandler("status", status))
@@ -124,14 +122,32 @@ app_bot.add_handler(CommandHandler("makeadmin", make_admin))
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = Update.de_json(data, bot)
-    await app_bot.update_queue.put(update)
+    await app_bot.process_update(update)
     return {"ok": True}
 
-# --- Set webhook on startup ---
-@app.on_event("startup")
-async def startup():
-    await bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
-    print("✅ Webhook set successfully!")
+# --- Lifespan events ---
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    await app_bot.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
+    async with app_bot:
+        await app_bot.start()
+        print("✅ Webhook set successfully!")
+        yield
+        # Shutdown
+        await app_bot.stop()
+
+app = FastAPI(lifespan=lifespan)
+
+# Re-add the webhook endpoint after FastAPI recreation
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    data = await request.json()
+    update = Update.de_json(data, bot)
+    await app_bot.process_update(update)
+    return {"ok": True}
 
 # --- Local dev ---
 if __name__ == "__main__":
