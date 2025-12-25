@@ -60,13 +60,35 @@ def format_teams():
 def get_player_count():
     return len([m for m in members.values() if m["status"] == "IN"])
 
+async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Check if user is an admin (hybrid approach)"""
+    user_id = update.effective_user.id
+    chat = update.effective_chat
+    
+    # Always check hardcoded admins list
+    if user_id in admins:
+        return True
+    
+    # In groups/supergroups, also check if user is a Telegram group admin
+    if chat.type in ["group", "supergroup"]:
+        try:
+            member = await context.bot.get_chat_member(chat.id, user_id)
+            # Check if user is creator or administrator
+            if member.status in ["creator", "administrator"]:
+                return True
+        except Exception as e:
+            print(f"Error checking admin status: {e}")
+    
+    return False
+
 # --- Telegram handlers ---
 async def begin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin command to show welcome and user ID"""
-    user_id = update.effective_user.id
-    if user_id not in admins:
+    if not await is_admin(update, context):
         await update.message.reply_text("🚫 Only admins have the right to use this command.")
         return
+    
+    user_id = update.effective_user.id
     await update.message.reply_text(
         f"👋 Hello {update.effective_user.first_name}!\n\n"
         f"🤖 Welcome to the {GROUP_NAME} Football Bot.\n"
@@ -76,8 +98,7 @@ async def begin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin command to start selection"""
-    user_id = update.effective_user.id
-    if user_id not in admins:
+    if not await is_admin(update, context):
         await update.message.reply_text("🚫 Only admins have the right to use this command.")
         return
     
@@ -106,8 +127,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def end(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin command to end selection and create teams"""
-    user_id = update.effective_user.id
-    if user_id not in admins:
+    if not await is_admin(update, context):
         await update.message.reply_text("🚫 Only admins have the right to use this command.")
         return
     
@@ -154,8 +174,7 @@ async def out_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin command to check current status"""
-    user_id = update.effective_user.id
-    if user_id not in admins:
+    if not await is_admin(update, context):
         await update.message.reply_text("🚫 Only admins have the right to use this command.")
         return
     
@@ -183,8 +202,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def make_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin command to make another user an admin"""
-    user_id = update.effective_user.id
-    if user_id not in admins:
+    if not await is_admin(update, context):
         await update.message.reply_text("🚫 Only admins have the right to use this command.")
         return
     
@@ -205,10 +223,9 @@ async def make_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show help message"""
-    user_id = update.effective_user.id
-    is_admin = user_id in admins
+    is_user_admin = await is_admin(update, context)
     
-    if is_admin:
+    if is_user_admin:
         message = (
             "🤖 Admin Commands:\n\n"
             "/begin - Show welcome message & get your user ID\n"
