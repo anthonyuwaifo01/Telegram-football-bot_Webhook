@@ -17,23 +17,37 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 GROUP_NAME = os.environ.get("GROUP_NAME", "CalgaryUnfitballers")
 
 # --- State ---
-admins = {1081255171}  # Replace with your actual Telegram user ID
+admins = {YOUR_USER_ID_HERE}  # Replace with your actual Telegram user ID
 
 # Chat-specific state: {chat_id: {"selection_active": bool, "members": {}, "teams": []}}
 chat_states = {}
 
 # --- Helper functions ---
-def shuffle_teams():
-    in_members = [m for m in members.values() if m["status"] == "IN"]
+def get_chat_state(chat_id):
+    """Get or initialize state for a specific chat"""
+    if chat_id not in chat_states:
+        chat_states[chat_id] = {
+            "selection_active": False,
+            "members": {},
+            "teams": []
+        }
+    return chat_states[chat_id]
+
+def shuffle_teams(chat_id):
+    state = get_chat_state(chat_id)
+    in_members = [m for m in state["members"].values() if m["status"] == "IN"]
     random.shuffle(in_members)
-    teams.clear()
+    state["teams"].clear()
     group_size = 6
     while in_members:
         team = in_members[:group_size]
-        teams.append(team)
+        state["teams"].append(team)
         in_members = in_members[group_size:]
 
-def format_teams():
+def format_teams(chat_id):
+    state = get_chat_state(chat_id)
+    teams = state["teams"]
+    
     if not teams:
         return "No teams to display."
     
@@ -57,8 +71,9 @@ def format_teams():
     
     return "\n".join(result)
 
-def get_player_count():
-    return len([m for m in members.values() if m["status"] == "IN"])
+def get_player_count(chat_id):
+    state = get_chat_state(chat_id)
+    return len([m for m in state["members"].values() if m["status"] == "IN"])
 
 async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """Check if user is an admin (hybrid approach)"""
