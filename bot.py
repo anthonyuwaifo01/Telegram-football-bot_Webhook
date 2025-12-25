@@ -7,10 +7,13 @@ from telegram.ext import (
     Application,
     CommandHandler,
     ContextTypes,
+    MessageHandler,
+    filters
 )
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+GROUP_NAME = os.environ.get("GROUP_NAME", "CalgaryUnfitballers")
 
 # --- State ---
 admins = {1081255171}  # Replace with your actual Telegram user ID
@@ -30,80 +33,206 @@ def shuffle_teams():
         in_members = in_members[group_size:]
 
 def format_teams():
-    result = []
-    for idx, team in enumerate(teams, start=1):
-        members_list = ", ".join([m["name"] for m in team])
-        result.append(f"Team {idx} ({len(team)} players): {members_list}")
+    if not teams:
+        return "No teams to display."
+    
+    team_colors = ["🔴", "🔵", "🟢", "🟡", "🟣", "🟠"]
+    team_names = ["Red", "Blue", "Green", "Yellow", "Purple", "Orange"]
+    
+    result = ["🎲 RANDOM SELECTION", "⚽ THIS WEEK'S TEAMS ⚽", "=" * 30, ""]
+    
+    total_players = 0
+    for idx, team in enumerate(teams):
+        color = team_colors[idx % len(team_colors)]
+        name = team_names[idx % len(team_names)]
+        result.append(f"{color} {name} Team ({len(team)} players)")
+        for member in team:
+            result.append(f"     • {member['name']}")
+        result.append("")
+        total_players += len(team)
+    
+    result.append(f"Total Players: {total_players}")
+    result.append(f"Teams Created: {len(teams)}")
+    
     return "\n".join(result)
+
+def get_player_count():
+    return len([m for m in members.values() if m["status"] == "IN"])
 
 # --- Telegram handlers ---
 async def begin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command to show welcome and user ID"""
     user_id = update.effective_user.id
     if user_id not in admins:
-        await update.message.reply_text("Only admins have the right to use this command.")
+        await update.message.reply_text("🚫 Only admins have the right to use this command.")
         return
     await update.message.reply_text(
-        f"Hello {update.effective_user.first_name}! Welcome to the Football Bot.\n"
-        f"Your chat ID is: {user_id}"
+        f"👋 Hello {update.effective_user.first_name}!\n\n"
+        f"🤖 Welcome to the {GROUP_NAME} Football Bot.\n"
+        f"🆔 Your chat ID is: `{user_id}`\n\n"
+        f"Use /start to begin player selection!"
     )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command to start selection"""
     user_id = update.effective_user.id
     if user_id not in admins:
-        await update.message.reply_text("Only admins have the right to use this command.")
+        await update.message.reply_text("🚫 Only admins have the right to use this command.")
         return
+    
     global selection_active
     selection_active = True
     for m in members.values():
         m["status"] = "OUT"
-    await update.message.reply_text("Player selection started! Members, send /in or /out.")
+    
+    message = (
+        f"🎉 Welcome {GROUP_NAME}, Time for team Selection!\n\n"
+        f"Reply with:\n"
+        f"  • in - Join this week\n"
+        f"  • out - Skip this week\n\n"
+        f"Admin will announce teams later!"
+    )
+    await update.message.reply_text(message)
 
 async def end(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command to end selection and create teams"""
     user_id = update.effective_user.id
     if user_id not in admins:
-        await update.message.reply_text("Only admins have the right to use this command.")
+        await update.message.reply_text("🚫 Only admins have the right to use this command.")
         return
+    
     global selection_active
     selection_active = False
     shuffle_teams()
-    await update.message.reply_text("Selection ended! Here are the teams:\n\n" + format_teams())
+    await update.message.reply_text(format_teams())
 
 async def in_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Player marks themselves as IN"""
     if not selection_active:
-        await update.message.reply_text("Selection is not active.")
+        await update.message.reply_text("⚠️ Selection is not active. Wait for admin to start!")
         return
+    
     user_id = update.effective_user.id
-    members[user_id] = {"name": update.effective_user.first_name, "status": "IN"}
-    await update.message.reply_text(f"{update.effective_user.first_name} marked as IN!")
+    user_name = update.effective_user.first_name or update.effective_user.username or "Player"
+    members[user_id] = {"name": user_name, "status": "IN"}
+    
+    count = get_player_count()
+    player_word = "player" if count == 1 else "players"
+    
+    await update.message.reply_text(
+        f"✅ {user_name} is IN!\n"
+        f"Current count: {count} {player_word}"
+    )
 
 async def out_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Player marks themselves as OUT"""
     if not selection_active:
-        await update.message.reply_text("Selection is not active.")
+        await update.message.reply_text("⚠️ Selection is not active. Wait for admin to start!")
         return
+    
     user_id = update.effective_user.id
-    members[user_id] = {"name": update.effective_user.first_name, "status": "OUT"}
-    await update.message.reply_text(f"{update.effective_user.first_name} marked as OUT!")
+    user_name = update.effective_user.first_name or update.effective_user.username or "Player"
+    members[user_id] = {"name": user_name, "status": "OUT"}
+    
+    count = get_player_count()
+    player_word = "player" if count == 1 else "players"
+    
+    await update.message.reply_text(
+        f"❌ {user_name} is OUT!\n"
+        f"Current count: {count} {player_word}"
+    )
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command to check current status"""
     user_id = update.effective_user.id
     if user_id not in admins:
-        await update.message.reply_text("Only admins have the right to use this command.")
+        await update.message.reply_text("🚫 Only admins have the right to use this command.")
         return
+    
     in_members = [m["name"] for m in members.values() if m["status"] == "IN"]
     out_members = [m["name"] for m in members.values() if m["status"] == "OUT"]
-    await update.message.reply_text(f"Selection Active: {selection_active}\nIN: {in_members}\nOUT: {out_members}")
+    
+    status_emoji = "🟢 ACTIVE" if selection_active else "🔴 NOT ACTIVE"
+    
+    message = f"📊 Status: {status_emoji}\n"
+    message += f"👥 Players In: {len(in_members)}\n\n"
+    
+    if in_members:
+        message += "✅ Participants:\n"
+        for name in in_members:
+            message += f"  • {name}\n"
+    else:
+        message += "No players IN yet.\n"
+    
+    if out_members:
+        message += f"\n❌ Out ({len(out_members)}):\n"
+        for name in out_members:
+            message += f"  • {name}\n"
+    
+    await update.message.reply_text(message)
 
 async def make_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command to make another user an admin"""
     user_id = update.effective_user.id
     if user_id not in admins:
-        await update.message.reply_text("Only admins have the right to use this command.")
+        await update.message.reply_text("🚫 Only admins have the right to use this command.")
         return
+    
     try:
         new_admin_id = int(context.args[0])
         admins.add(new_admin_id)
-        await update.message.reply_text(f"User {new_admin_id} is now an admin.")
-    except:
-        await update.message.reply_text("Usage: /makeadmin <user_id>")
+        
+        # Try to get the name if they've interacted with the bot
+        new_admin_name = "User"
+        if new_admin_id in members:
+            new_admin_name = members[new_admin_id]["name"]
+        
+        await update.message.reply_text(
+            f"👑 {new_admin_name} (ID: {new_admin_id}) is now an admin!"
+        )
+    except (IndexError, ValueError):
+        await update.message.reply_text("❌ Usage: /makeadmin <user_id>")
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show help message"""
+    user_id = update.effective_user.id
+    is_admin = user_id in admins
+    
+    if is_admin:
+        message = (
+            "🤖 Admin Commands:\n\n"
+            "/begin - Show welcome message & get your user ID\n"
+            "/start - Start player selection\n"
+            "/end - End selection & create teams\n"
+            "/status - View current player status\n"
+            "/makeadmin <id> - Make someone an admin\n"
+            "/help - Show this help message\n\n"
+            "👥 Player Commands:\n"
+            "/in or in - Mark yourself as IN\n"
+            "/out or out - Mark yourself as OUT\n"
+            "/help - Show help message"
+        )
+    else:
+        message = (
+            "🤖 Player Commands:\n\n"
+            "/in or in - Mark yourself as IN\n"
+            "/out or out - Mark yourself as OUT\n"
+            "/help - Show this help message\n\n"
+            "💡 Wait for admin to start selection!"
+        )
+    
+    await update.message.reply_text(message)
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle plain text messages like 'in' or 'out'"""
+    text = update.message.text.strip().lower()
+    
+    if text == "in":
+        await in_command(update, context)
+    elif text == "out":
+        await out_command(update, context)
+    else:
+        await update.message.reply_text("❓ Unknown command. Send /help for commands.")
 
 # --- Build Application ---
 app_bot = Application.builder().token(TOKEN).build()
@@ -114,6 +243,8 @@ app_bot.add_handler(CommandHandler("in", in_command))
 app_bot.add_handler(CommandHandler("out", out_command))
 app_bot.add_handler(CommandHandler("status", status))
 app_bot.add_handler(CommandHandler("makeadmin", make_admin))
+app_bot.add_handler(CommandHandler("help", help_command))
+app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
 # --- Lifespan events ---
 @asynccontextmanager
