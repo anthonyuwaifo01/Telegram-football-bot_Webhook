@@ -17,10 +17,10 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 GROUP_NAME = os.environ.get("GROUP_NAME", "CalgaryUnfitballers")
 
 # --- State ---
-admins = {1081255171}  # Replace with your actual Telegram user ID
-members = {}
-selection_active = False
-teams = []
+admins = {YOUR_USER_ID_HERE}  # Replace with your actual Telegram user ID
+
+# Chat-specific state: {chat_id: {"selection_active": bool, "members": {}, "teams": []}}
+chat_states = {}
 
 # --- Helper functions ---
 def shuffle_teams():
@@ -102,9 +102,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🚫 Only admins have the right to use this command.")
         return
     
-    global selection_active
-    selection_active = True
-    for m in members.values():
+    chat_id = update.effective_chat.id
+    state = get_chat_state(chat_id)
+    
+    state["selection_active"] = True
+    for m in state["members"].values():
         m["status"] = "OUT"
     
     # Create inline keyboard
@@ -131,22 +133,27 @@ async def end(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🚫 Only admins have the right to use this command.")
         return
     
-    global selection_active
-    selection_active = False
-    shuffle_teams()
-    await update.message.reply_text(format_teams())
+    chat_id = update.effective_chat.id
+    state = get_chat_state(chat_id)
+    
+    state["selection_active"] = False
+    shuffle_teams(chat_id)
+    await update.message.reply_text(format_teams(chat_id))
 
 async def in_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Player marks themselves as IN"""
-    if not selection_active:
+    chat_id = update.effective_chat.id
+    state = get_chat_state(chat_id)
+    
+    if not state["selection_active"]:
         await update.message.reply_text("⚠️ Selection is not active. Wait for admin to start!")
         return
     
     user_id = update.effective_user.id
     user_name = update.effective_user.first_name or update.effective_user.username or "Player"
-    members[user_id] = {"name": user_name, "status": "IN"}
+    state["members"][user_id] = {"name": user_name, "status": "IN"}
     
-    count = get_player_count()
+    count = get_player_count(chat_id)
     player_word = "player" if count == 1 else "players"
     
     await update.message.reply_text(
@@ -156,15 +163,18 @@ async def in_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def out_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Player marks themselves as OUT"""
-    if not selection_active:
+    chat_id = update.effective_chat.id
+    state = get_chat_state(chat_id)
+    
+    if not state["selection_active"]:
         await update.message.reply_text("⚠️ Selection is not active. Wait for admin to start!")
         return
     
     user_id = update.effective_user.id
     user_name = update.effective_user.first_name or update.effective_user.username or "Player"
-    members[user_id] = {"name": user_name, "status": "OUT"}
+    state["members"][user_id] = {"name": user_name, "status": "OUT"}
     
-    count = get_player_count()
+    count = get_player_count(chat_id)
     player_word = "player" if count == 1 else "players"
     
     await update.message.reply_text(
@@ -178,10 +188,13 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🚫 Only admins have the right to use this command.")
         return
     
-    in_members = [m["name"] for m in members.values() if m["status"] == "IN"]
-    out_members = [m["name"] for m in members.values() if m["status"] == "OUT"]
+    chat_id = update.effective_chat.id
+    state = get_chat_state(chat_id)
     
-    status_emoji = "🟢 ACTIVE" if selection_active else "🔴 NOT ACTIVE"
+    in_members = [m["name"] for m in state["members"].values() if m["status"] == "IN"]
+    out_members = [m["name"] for m in state["members"].values() if m["status"] == "OUT"]
+    
+    status_emoji = "🟢 ACTIVE" if state["selection_active"] else "🔴 NOT ACTIVE"
     
     message = f"📊 Status: {status_emoji}\n"
     message += f"👥 Players In: {len(in_members)}\n\n"
@@ -210,10 +223,13 @@ async def make_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         new_admin_id = int(context.args[0])
         admins.add(new_admin_id)
         
+        chat_id = update.effective_chat.id
+        state = get_chat_state(chat_id)
+        
         # Try to get the name if they've interacted with the bot
         new_admin_name = "User"
-        if new_admin_id in members:
-            new_admin_name = members[new_admin_id]["name"]
+        if new_admin_id in state["members"]:
+            new_admin_name = state["members"][new_admin_id]["name"]
         
         await update.message.reply_text(
             f"👑 {new_admin_name} (ID: {new_admin_id}) is now an admin!"
@@ -255,7 +271,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    if not selection_active:
+    chat_id = query.message.chat.id
+    state = get_chat_state(chat_id)
+    
+    if not state["selection_active"]:
         await query.edit_message_text("⚠️ Selection is not active. Wait for admin to start!")
         return
     
@@ -263,8 +282,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_name = query.from_user.first_name or query.from_user.username or "Player"
     
     if query.data == "in":
-        members[user_id] = {"name": user_name, "status": "IN"}
-        count = get_player_count()
+        state["members"][user_id] = {"name": user_name, "status": "IN"}
+        count = get_player_count(chat_id)
         player_word = "player" if count == 1 else "players"
         
         await query.edit_message_text(
@@ -272,8 +291,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Current count: {count} {player_word}"
         )
     elif query.data == "out":
-        members[user_id] = {"name": user_name, "status": "OUT"}
-        count = get_player_count()
+        state["members"][user_id] = {"name": user_name, "status": "OUT"}
+        count = get_player_count(chat_id)
         player_word = "player" if count == 1 else "players"
         
         await query.edit_message_text(
