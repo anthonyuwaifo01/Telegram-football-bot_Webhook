@@ -2,12 +2,13 @@ import os
 import random
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from telegram import Update, Bot
+from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
     ContextTypes,
     MessageHandler,
+    CallbackQueryHandler,
     filters
 )
 
@@ -16,7 +17,7 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 GROUP_NAME = os.environ.get("GROUP_NAME", "CalgaryUnfitballers")
 
 # --- State ---
-admins = {1081255171}  # Replace with your actual Telegram user ID
+admins = {YOUR_USER_ID_HERE}  # Replace with your actual Telegram user ID
 members = {}
 selection_active = False
 teams = []
@@ -85,14 +86,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for m in members.values():
         m["status"] = "OUT"
     
+    # Create inline keyboard
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ I'm IN", callback_data="in"),
+            InlineKeyboardButton("❌ I'm OUT", callback_data="out")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
     message = (
         f"🎉 Welcome {GROUP_NAME}, Time for team Selection!\n\n"
-        f"Reply with:\n"
-        f"  • in - Join this week\n"
-        f"  • out - Skip this week\n\n"
+        f"Click the buttons below or reply with:\n"
+        f"  • /in - Join this week\n"
+        f"  • /out - Skip this week\n\n"
         f"Admin will announce teams later!"
     )
-    await update.message.reply_text(message)
+    await update.message.reply_text(message, reply_markup=reply_markup)
 
 async def end(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin command to end selection and create teams"""
@@ -223,6 +233,37 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(message)
 
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle button clicks"""
+    query = update.callback_query
+    await query.answer()
+    
+    if not selection_active:
+        await query.edit_message_text("⚠️ Selection is not active. Wait for admin to start!")
+        return
+    
+    user_id = query.from_user.id
+    user_name = query.from_user.first_name or query.from_user.username or "Player"
+    
+    if query.data == "in":
+        members[user_id] = {"name": user_name, "status": "IN"}
+        count = get_player_count()
+        player_word = "player" if count == 1 else "players"
+        
+        await query.edit_message_text(
+            f"✅ {user_name} is IN!\n"
+            f"Current count: {count} {player_word}"
+        )
+    elif query.data == "out":
+        members[user_id] = {"name": user_name, "status": "OUT"}
+        count = get_player_count()
+        player_word = "player" if count == 1 else "players"
+        
+        await query.edit_message_text(
+            f"❌ {user_name} is OUT!\n"
+            f"Current count: {count} {player_word}"
+        )
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle plain text messages like 'in' or 'out'"""
     text = update.message.text.strip().lower()
@@ -244,6 +285,7 @@ app_bot.add_handler(CommandHandler("out", out_command))
 app_bot.add_handler(CommandHandler("status", status))
 app_bot.add_handler(CommandHandler("makeadmin", make_admin))
 app_bot.add_handler(CommandHandler("help", help_command))
+app_bot.add_handler(CallbackQueryHandler(button_callback))
 app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
 # --- Lifespan events ---
