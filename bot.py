@@ -41,10 +41,20 @@ def format_teams():
     return "\n".join(result)
 
 # --- Telegram handlers ---
-async def start_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def begin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in admins:
-        await update.message.reply_text("Only admins can start selection.")
+        await update.message.reply_text("Only admins have the right to use this command.")
+        return
+    await update.message.reply_text(
+        f"Hello {update.effective_user.first_name}! Welcome to the Football Bot.\n"
+        f"Your chat ID is: {user_id}"
+    )
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in admins:
+        await update.message.reply_text("Only admins have the right to use this command.")
         return
     global selection_active
     selection_active = True
@@ -52,10 +62,10 @@ async def start_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
         m["status"] = "OUT"
     await update.message.reply_text("Player selection started! Members, send /in or /out.")
 
-async def end_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def end(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in admins:
-        await update.message.reply_text("Only admins can end selection.")
+        await update.message.reply_text("Only admins have the right to use this command.")
         return
     global selection_active
     selection_active = False
@@ -81,7 +91,7 @@ async def out_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in admins:
-        await update.message.reply_text("Only admins can see status.")
+        await update.message.reply_text("Only admins have the right to use this command.")
         return
     in_members = [m["name"] for m in members.values() if m["status"] == "IN"]
     out_members = [m["name"] for m in members.values() if m["status"] == "OUT"]
@@ -90,7 +100,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def make_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in admins:
-        await update.message.reply_text("Only admins can make other admins.")
+        await update.message.reply_text("Only admins have the right to use this command.")
         return
     try:
         new_admin_id = int(context.args[0])
@@ -101,8 +111,9 @@ async def make_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Build Application ---
 app_bot = ApplicationBuilder().token(TOKEN).build()
-app_bot.add_handler(CommandHandler("startselection", start_selection))
-app_bot.add_handler(CommandHandler("endselection", end_selection))
+app_bot.add_handler(CommandHandler("begin", begin))   # greeting/admin check
+app_bot.add_handler(CommandHandler("start", start))   # start selection
+app_bot.add_handler(CommandHandler("end", end))       # end selection
 app_bot.add_handler(CommandHandler("in", in_command))
 app_bot.add_handler(CommandHandler("out", out_command))
 app_bot.add_handler(CommandHandler("status", status))
