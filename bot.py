@@ -284,13 +284,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle button clicks"""
     query = update.callback_query
-    await query.answer()
     
     chat_id = query.message.chat.id
     state = get_chat_state(chat_id)
     
     if not state["selection_active"]:
-        await query.edit_message_text("⚠️ Selection is not active. Wait for admin to start!")
+        await query.answer("⚠️ Selection is not active. Wait for admin to start!", show_alert=True)
         return
     
     user_id = query.from_user.id
@@ -301,18 +300,26 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         count = get_player_count(chat_id)
         player_word = "player" if count == 1 else "players"
         
-        await query.edit_message_text(
-            f"✅ {user_name} is IN!\n"
-            f"Current count: {count} {player_word}"
+        # Show popup notification to the user
+        await query.answer(f"✅ You're IN! Total: {count} {player_word}")
+        
+        # Send a new message to the group (keeps buttons visible)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"✅ {user_name} is IN!\nCurrent count: {count} {player_word}"
         )
     elif query.data == "out":
         state["members"][user_id] = {"name": user_name, "status": "OUT"}
         count = get_player_count(chat_id)
         player_word = "player" if count == 1 else "players"
         
-        await query.edit_message_text(
-            f"❌ {user_name} is OUT!\n"
-            f"Current count: {count} {player_word}"
+        # Show popup notification to the user
+        await query.answer(f"❌ You're OUT! Total: {count} {player_word}")
+        
+        # Send a new message to the group (keeps buttons visible)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"❌ {user_name} is OUT!\nCurrent count: {count} {player_word}"
         )
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
