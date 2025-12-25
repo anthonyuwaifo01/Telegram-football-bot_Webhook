@@ -17,7 +17,7 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 GROUP_NAME = os.environ.get("GROUP_NAME", "CalgaryUnfitballers")
 
 # --- State ---
-admins = {YOUR_USER_ID_HERE}  # Replace with your actual Telegram user ID
+admins = {1081255171}  # Replace with your actual Telegram user ID
 members = {}
 selection_active = False
 teams = []
