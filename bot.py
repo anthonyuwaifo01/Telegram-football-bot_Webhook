@@ -1,5 +1,6 @@
 import os
 import random
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from telegram import Update, Bot
 from telegram.ext import (
@@ -11,11 +12,8 @@ from telegram.ext import (
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
-bot = Bot(token=TOKEN)
-app = FastAPI()
-
 # --- State ---
-admins = {1081255171}
+admins = {1081255171}  # Replace with your actual Telegram user ID
 members = {}
 selection_active = False
 teams = []
@@ -117,35 +115,29 @@ app_bot.add_handler(CommandHandler("out", out_command))
 app_bot.add_handler(CommandHandler("status", status))
 app_bot.add_handler(CommandHandler("makeadmin", make_admin))
 
+# --- Lifespan events ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Initialize bot and set webhook
+    await app_bot.initialize()
+    await app_bot.start()
+    await app_bot.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
+    print("✅ Webhook set successfully!")
+    
+    yield
+    
+    # Shutdown: Stop bot
+    await app_bot.stop()
+    await app_bot.shutdown()
+
+# Create FastAPI app with lifespan
+app = FastAPI(lifespan=lifespan)
+
 # --- Webhook endpoint ---
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     data = await request.json()
-    update = Update.de_json(data, bot)
-    await app_bot.process_update(update)
-    return {"ok": True}
-
-# --- Lifespan events ---
-from contextlib import asynccontextmanager
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    await app_bot.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
-    async with app_bot:
-        await app_bot.start()
-        print("✅ Webhook set successfully!")
-        yield
-        # Shutdown
-        await app_bot.stop()
-
-app = FastAPI(lifespan=lifespan)
-
-# Re-add the webhook endpoint after FastAPI recreation
-@app.post("/webhook")
-async def telegram_webhook(request: Request):
-    data = await request.json()
-    update = Update.de_json(data, bot)
+    update = Update.de_json(data, app_bot.bot)
     await app_bot.process_update(update)
     return {"ok": True}
 
